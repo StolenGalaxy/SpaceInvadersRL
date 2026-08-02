@@ -27,7 +27,7 @@ class Agent:
 
         # later I'll move these into a yaml file
         self.epsilon = 1
-        self.epsilon_decay = 0.999997
+        self.epsilon_decay = 0.999998
         self.epsilon_min = 0.05
         self.maxlen = 100000
         self.batch_size = 32
@@ -81,9 +81,10 @@ class Agent:
             state = torch.from_numpy(state)
 
             terminated = False
+            truncated = False
             episode_reward = 0
 
-            while not terminated:
+            while not terminated and not truncated:
                 step += 1
 
                 if random.random() < self.epsilon and self.training:
@@ -99,7 +100,8 @@ class Agent:
                 reward = torch.tensor([reward], dtype=torch.float32)
                 terminated = torch.tensor([terminated], dtype=torch.float32)
 
-                self.memory.append((state, action, new_state, reward, terminated))
+                if self.training:
+                    self.memory.append((state, action, new_state, reward, terminated))
 
                 state = new_state
 
@@ -114,14 +116,19 @@ class Agent:
                     if len(self.memory) > self.batch_size:
                         batch = self.memory.sample(self.batch_size)
                         self.optimise(batch)
-                    if step >= self.network_sync_rate:
+                    if not step % self.network_sync_rate:
                         self.target_dqn.load_state_dict(self.policy_dqn.state_dict())
 
             if episode_reward > highest_reward:
-                torch.save(self.policy_dqn.state_dict(), f"{MODEL_DIR}/best.pt")
                 print(f"{datetime.now()} | Episode {episode} | New highest reward: {episode_reward} | Epsilon: {self.epsilon}")
                 highest_reward = episode_reward
-            if not episode % self.model_save_rate:
+
+                if self.training:
+                    torch.save(self.policy_dqn.state_dict(), f"{MODEL_DIR}/best.pt")
+            elif not episode % 50:
+                print(f"{datetime.now()} | Episode {episode} | Epsilon: {self.epsilon}")
+
+            if not episode % self.model_save_rate and self.training:
                 torch.save(self.policy_dqn.state_dict(), f"{MODEL_DIR}/recent.pt")
 
 
