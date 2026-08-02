@@ -35,6 +35,13 @@ class Agent:
         self.network_sync_rate = 1000
         self.discount_factor_gamma = 0.99
         self.model_save_rate = 10
+        self.optimise_frequency = 4 # after every x steps the model will optimise. why not optimise after every step?
+                                    # in pong, we could optimise every step as we were only passing data through
+                                    # a few linear layers. here we are using complex convolutional layers that are
+                                    # much more computationally expensive.
+                                    # in addition, the difference between pixels after a single step is a lot less
+                                    # noticable than the difference between the coordinates we gave in pong.
+        self.warmup_steps = 20000
 
         self.memory = Memory(maxlen=self.maxlen)
 
@@ -113,7 +120,7 @@ class Agent:
 
                 # optimise
                 if self.training:
-                    if len(self.memory) > self.batch_size:
+                    if len(self.memory) > self.warmup_steps and not step % self.optimise_frequency:
                         batch = self.memory.sample(self.batch_size)
                         self.optimise(batch)
                     if not step % self.network_sync_rate:
