@@ -22,8 +22,9 @@ os.makedirs(MODEL_DIR, exist_ok=True)
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 class Agent:
-    def __init__(self, train):
-        self.training = train
+    def __init__(self, arguments):
+        self.training = arguments.train
+        self.saved_model_file = arguments.r
 
         # later I'll move these into a yaml file
         self.epsilon = 1
@@ -69,12 +70,14 @@ class Agent:
         self.policy_dqn = DQN(output_size=6).to(device)
 
         if not self.training:
-            self.policy_dqn.load_state_dict(torch.load(f"{MODEL_DIR}/best.pt"))
+            if self.saved_model_file:
+                print(f"Loading {MODEL_DIR}/{self.saved_model_file}")
+                self.policy_dqn.load_state_dict(torch.load(f"{MODEL_DIR}/{self.saved_model_file}"))
             self.policy_dqn.eval()
-
+        else:
+            self.policy_dqn.train()
 
         self.target_dqn = DQN(output_size=6).to(device)
-        self.target_dqn.load_state_dict(self.policy_dqn.state_dict())
 
         self.loss_fn = nn.MSELoss()
         self.optimiser = torch.optim.Adam(self.policy_dqn.parameters(), lr=self.learning_rate_alpha)
@@ -83,7 +86,25 @@ class Agent:
 
         highest_reward = -9999999
 
-        for episode in itertools.count():
+        episode_number = 0
+
+        if self.training and self.saved_model_file:
+            print(f"Loading {MODEL_DIR}/{self.saved_model_file}")
+            checkpoint = torch.load(f"{MODEL_DIR}/{self.saved_model_file}")
+            self.policy_dqn.load_state_dict(checkpoint["policy_state"])
+            self.optimiser.load_state_dict(checkpoint["optimiser_state"])
+
+            self.epsilon = checkpoint["epsilon"]
+            episode_number = checkpoint["episode"]
+            step = checkpoint["step"]
+            highest_reward = checkpoint["highest_reward"]
+
+
+
+        self.target_dqn.load_state_dict(self.policy_dqn.state_dict())
+
+
+        for episode in itertools.count(episode_number):
             state, info = env.reset()
             state = torch.from_numpy(state)
 
@@ -132,11 +153,21 @@ class Agent:
 
                 if self.training:
                     torch.save(self.policy_dqn.state_dict(), f"{MODEL_DIR}/best.pt")
+
             elif not episode % 50:
                 print(f"{datetime.now()} | Episode {episode} | Epsilon: {self.epsilon}")
 
             if not episode % self.model_save_rate and self.training:
-                torch.save(self.policy_dqn.state_dict(), f"{MODEL_DIR}/recent.pt")
+                # save data for resuming training later
+                checkpoint = {
+                    "episode": episode,
+                    "step": step,
+                    "highest_reward": highest_reward,
+                    "epsilon": self.epsilon,
+                    "policy_state": self.policy_dqn.state_dict(),
+                    "optimiser_state": self.optimiser.state_dict()
+                }
+                torch.save(checkpoint, f"{MODEL_DIR}/training.pt")
 
 
     def optimise(self, mini_batch):
@@ -169,8 +200,9 @@ class Agent:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="SpaceInvadersRL")
     parser.add_argument("--train", action="store_true")
+    parser.add_argument("-r")
 
     args = parser.parse_args()
 
-    agent = Agent(args.train)
+    agent = Agent(args)
     agent.run()
