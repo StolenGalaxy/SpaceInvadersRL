@@ -61,5 +61,5 @@ class DQN(nn.Module):
 
         a = a - torch.mean(a, dim=1, keepdim=True)
 
-        q = v+a
+        q = v + a
         return q
