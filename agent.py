@@ -28,7 +28,7 @@ class Agent:
 
         # later I'll move these into a yaml file
         self.epsilon = 1
-        self.epsilon_decay = 0.999998
+        self.epsilon_decay = 0.999999693
         self.epsilon_min = 0.05
         self.maxlen = 100000
         self.batch_size = 32
