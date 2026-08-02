@@ -27,7 +27,7 @@ class Agent:
 
         # later I'll move these into a yaml file
         self.epsilon = 1
-        self.epsilon_decay = 0.999999
+        self.epsilon_decay = 0.999997
         self.epsilon_min = 0.05
         self.maxlen = 100000
         self.batch_size = 32
@@ -78,7 +78,7 @@ class Agent:
 
         for episode in itertools.count():
             state, info = env.reset()
-            state = torch.from_numpy(state).to(device)
+            state = torch.from_numpy(state)
 
             terminated = False
             episode_reward = 0
@@ -91,13 +91,13 @@ class Agent:
                     action = env.action_space.sample()
                 else:
                     with torch.no_grad():
-                        action = self.policy_dqn(state.unsqueeze(0)).argmax().item()
+                        action = self.policy_dqn(state.unsqueeze(0).to(device)).argmax().item()
 
                 new_state, reward, terminated, truncated, info = env.step(action)
-                action = torch.tensor([action], dtype=torch.float32).to(device)
-                new_state = torch.from_numpy(new_state).to(device)
-                reward = torch.tensor([reward], dtype=torch.float32).to(device)
-                terminated = torch.tensor([terminated], dtype=torch.float32).to(device)
+                action = torch.tensor([action], dtype=torch.float32)
+                new_state = torch.from_numpy(new_state)
+                reward = torch.tensor([reward], dtype=torch.float32)
+                terminated = torch.tensor([terminated], dtype=torch.float32)
 
                 self.memory.append((state, action, new_state, reward, terminated))
 
@@ -130,12 +130,12 @@ class Agent:
 
         # .stack() combines tensors along a new dimension, .cat() does it along an existing dimension.
         # we need to create a new dimension because the first dimension is currently being used to group frames.
-        states = torch.stack(states)
+        states = torch.stack(states).to(device)
+        new_states = torch.stack(new_states).to(device)
 
-        actions = torch.cat(actions).long()
-        new_states = torch.stack(new_states)
-        rewards = torch.cat(rewards)
-        terminations = torch.cat(terminations)
+        actions = torch.cat(actions).long().to(device)
+        rewards = torch.cat(rewards).to(device)
+        terminations = torch.cat(terminations).to(device)
 
 
         current_q = self.policy_dqn(states).gather(dim=1, index=actions.unsqueeze(1)).squeeze()
