@@ -62,7 +62,7 @@ class Agent:
             screen_size=84,
             grayscale_obs=True,
             frame_skip=4,
-            scale_obs=True
+            scale_obs=False
         )
 
         env = FrameStackObservation(env, 4)
@@ -124,7 +124,7 @@ class Agent:
                     action = env.action_space.sample()
                 else:
                     with torch.no_grad():
-                        action = self.policy_dqn(state.unsqueeze(0).to(device)).argmax().item()
+                        action = self.policy_dqn((state / 255).unsqueeze(0).to(device)).argmax().item()
 
                 new_state, reward, terminated, truncated, info = env.step(action)
                 action = torch.tensor([action], dtype=torch.float32)
@@ -187,8 +187,8 @@ class Agent:
 
         # .stack() combines tensors along a new dimension, .cat() does it along an existing dimension.
         # we need to create a new dimension because the first dimension is currently being used to group frames.
-        states = torch.stack(states).to(device)
-        new_states = torch.stack(new_states).to(device)
+        states = torch.stack(states).to(device).div(255)
+        new_states = torch.stack(new_states).to(device).div(255)
 
         actions = torch.cat(actions).long().to(device)
         rewards = torch.cat(rewards).to(device)
