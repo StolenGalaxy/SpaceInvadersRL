@@ -35,7 +35,7 @@ class Agent:
         self.learning_rate_alpha = 0.0001
         self.network_sync_rate = 1000
         self.discount_factor_gamma = 0.99
-        self.model_save_rate = 10
+        self.model_save_rate = 400
         self.optimise_frequency = 4 # after every x steps the model will optimise. why not optimise after every step?
                                     # in pong, we could optimise every step as we were only passing data through
                                     # a few linear layers. here we are using complex convolutional layers that are
@@ -45,6 +45,7 @@ class Agent:
         self.warmup_steps = 20000
 
         self.memory = Memory(maxlen=self.maxlen)
+        self.store_memory = True
 
     def run(self):
         # initialise game
@@ -90,7 +91,7 @@ class Agent:
 
         if self.training and self.saved_model_file:
             print(f"Loading {MODEL_DIR}/{self.saved_model_file}")
-            checkpoint = torch.load(f"{MODEL_DIR}/{self.saved_model_file}")
+            checkpoint = torch.load(f"{MODEL_DIR}/{self.saved_model_file}", weights_only=False)
             self.policy_dqn.load_state_dict(checkpoint["policy_state"])
             self.optimiser.load_state_dict(checkpoint["optimiser_state"])
 
@@ -98,6 +99,9 @@ class Agent:
             episode_number = checkpoint["episode"]
             step = checkpoint["step"]
             highest_reward = checkpoint["highest_reward"]
+
+            if "memory" in checkpoint:
+                self.memory = checkpoint["memory"]
 
 
 
@@ -167,7 +171,15 @@ class Agent:
                     "policy_state": self.policy_dqn.state_dict(),
                     "optimiser_state": self.optimiser.state_dict()
                 }
-                torch.save(checkpoint, f"{MODEL_DIR}/training.pt")
+
+                if self.store_memory:
+                    checkpoint["memory"] = self.memory
+
+                print(f"{datetime.now()} | Saving")
+                torch.save(checkpoint, f"{MODEL_DIR}/training.pt.tmp") # keep the original while writing in case of
+                # interruption
+                os.replace(f"{MODEL_DIR}/training.pt.tmp", f"{MODEL_DIR}/training.pt") # then rename
+                print(f"{datetime.now()} | Finished saving")
 
 
     def optimise(self, mini_batch):
@@ -186,8 +198,8 @@ class Agent:
         current_q = self.policy_dqn(states).gather(dim=1, index=actions.unsqueeze(1)).squeeze()
 
         # ddqn
-        best_actions = self.policy_dqn(new_states).argmax(dim=1)
         with torch.no_grad():
+            best_actions = self.policy_dqn(new_states).argmax(dim=1)
             target_q = rewards + (1 - terminations) * self.discount_factor_gamma * self.target_dqn(new_states).gather(dim=1, index=best_actions.unsqueeze(1)).squeeze()
 
         self.optimiser.zero_grad()
