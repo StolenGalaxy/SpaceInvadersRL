@@ -62,7 +62,8 @@ class Agent:
             screen_size=84,
             grayscale_obs=True,
             frame_skip=4,
-            scale_obs=False
+            scale_obs=False,
+            terminal_on_life_loss=True # this ensures the network will avoid trying to lose any lives, not just all
         )
 
         env = FrameStackObservation(env, 4)
@@ -80,7 +81,7 @@ class Agent:
 
         self.target_dqn = DQN(output_size=6).to(device)
 
-        self.loss_fn = nn.MSELoss()
+        self.loss_fn = nn.HuberLoss(delta=1) # huber should help reduce the influence of outliers such as the mothership
         self.optimiser = torch.optim.Adam(self.policy_dqn.parameters(), lr=self.learning_rate_alpha)
 
         step = 0
@@ -191,7 +192,7 @@ class Agent:
         new_states = torch.stack(new_states).to(device).div(255)
 
         actions = torch.cat(actions).long().to(device)
-        rewards = torch.cat(rewards).to(device)
+        rewards = torch.cat(rewards).to(device).div(100) # scale rewards to keep gradients stable
         terminations = torch.cat(terminations).to(device)
 
 
