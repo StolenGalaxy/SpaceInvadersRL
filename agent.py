@@ -62,8 +62,7 @@ class Agent:
             screen_size=84,
             grayscale_obs=True,
             frame_skip=4,
-            scale_obs=False,
-            terminal_on_life_loss=True # this ensures the network will avoid trying to lose any lives, not just all
+            scale_obs=False
         )
 
         env = FrameStackObservation(env, 4)
@@ -113,6 +112,7 @@ class Agent:
             state, info = env.reset()
             state = torch.from_numpy(state)
 
+            lives = info["lives"]
             terminated = False
             truncated = False
             episode_reward = 0
@@ -130,11 +130,26 @@ class Agent:
                 new_state, reward, terminated, truncated, info = env.step(action)
                 action = torch.tensor([action], dtype=torch.float32)
                 new_state = torch.from_numpy(new_state)
+
+
+                # ensure dying causes a negative reward and a "terminated" flag (even though the game will continue
+                # running)
+                new_lives = info["lives"]
+                life_lost = new_lives < lives
+                if life_lost:
+                    reward = -100
+                    lives = new_lives
+
                 reward = torch.tensor([reward], dtype=torch.float32)
-                terminated = torch.tensor([terminated], dtype=torch.float32)
+
+                fixed_negative_reward = terminated or life_lost # if the agent dies or loses a life, we will force the
+                # bellman equation to give it a negative reward no matter what the future value of rewards could be
+                # to ensure it sees losing a life as negative
+
+                fixed_negative_reward = torch.tensor([fixed_negative_reward], dtype=torch.float32)
 
                 if self.training:
-                    self.memory.append((state, action, new_state, reward, terminated))
+                    self.memory.append((state, action, new_state, reward, fixed_negative_reward))
 
                 state = new_state
 
@@ -184,7 +199,7 @@ class Agent:
 
 
     def optimise(self, mini_batch):
-        states, actions, new_states, rewards, terminations = zip(*mini_batch)
+        states, actions, new_states, rewards, fixed_negative_reward = zip(*mini_batch)
 
         # .stack() combines tensors along a new dimension, .cat() does it along an existing dimension.
         # we need to create a new dimension because the first dimension is currently being used to group frames.
@@ -193,7 +208,7 @@ class Agent:
 
         actions = torch.cat(actions).long().to(device)
         rewards = torch.cat(rewards).to(device).div(100) # scale rewards to keep gradients stable
-        terminations = torch.cat(terminations).to(device)
+        fixed_negative_reward = torch.cat(fixed_negative_reward).to(device)
 
 
         current_q = self.policy_dqn(states).gather(dim=1, index=actions.unsqueeze(1)).squeeze()
@@ -201,7 +216,7 @@ class Agent:
         # ddqn
         with torch.no_grad():
             best_actions = self.policy_dqn(new_states).argmax(dim=1)
-            target_q = rewards + (1 - terminations) * self.discount_factor_gamma * self.target_dqn(new_states).gather(dim=1, index=best_actions.unsqueeze(1)).squeeze()
+            target_q = rewards + (1 - fixed_negative_reward) * self.discount_factor_gamma * self.target_dqn(new_states).gather(dim=1, index=best_actions.unsqueeze(1)).squeeze()
 
         self.optimiser.zero_grad()
         loss = self.loss_fn(current_q, target_q)
